@@ -46,6 +46,7 @@ export const CAR_PROPERTY_DEFINITIONS: CarPropertyDefinition[] = [
   { key: 'vehicleAvailability', name: 'Доступность авто', code: 'CAR_AVAILABILITY', type: 'S', multiple: 'N' },
   { key: 'vehicleState', name: 'Состояние авто', code: 'CAR_VEHICLE_STATE', type: 'S', multiple: 'N' },
   { key: 'dealerSitePublicationUrl', name: 'Ссылка на сайт', code: 'CAR_URL', type: 'S', multiple: 'N' },
+  { key: 'cmExpertUrl', name: 'Ссылка CM.Expert', code: 'CAR_CM_EXPERT_URL', type: 'S', multiple: 'N' },
   { key: 'photosUrls', name: 'Фото URL', code: 'CAR_PHOTOS_URLS', type: 'S', multiple: 'Y' }
 ];
 
@@ -76,6 +77,7 @@ const FIELD_MAP_KEYS: BitrixFieldMapKey[] = [
   'vehicleState',
   'dealerSitePublicationUrl',
   'publicationDescription',
+  'cmExpertUrl',
   'photos',
   'photosUrls'
 ];

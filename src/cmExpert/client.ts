@@ -130,7 +130,7 @@ export function extractCarsFromResponse(raw: unknown): RawCar[] {
   return [];
 }
 
-function shouldFetchNextPage(raw: unknown, pageCount: number, page: number, perPage: number): boolean {
+export function shouldFetchNextPage(raw: unknown, pageCount: number, page: number, perPage: number): boolean {
   if (pageCount === 0) return false;
 
   const totalPages = readNumber(raw, ['totalPages', 'pages', 'lastPage', 'pageCount']);

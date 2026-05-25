@@ -33,11 +33,11 @@ async function main(): Promise<void> {
       return;
 
     case 'sync':
-      console.log(JSON.stringify(await syncCars({ dryRun: false }), null, 2));
+      console.log(JSON.stringify(await syncCars({ dryRun: false, limit: parseLimitArg() }), null, 2));
       return;
 
     case 'sync:dry':
-      console.log(JSON.stringify(await syncCars({ dryRun: true }), null, 2));
+      console.log(JSON.stringify(await syncCars({ dryRun: true, limit: parseLimitArg() }), null, 2));
       return;
 
     case 'start':
@@ -47,6 +47,19 @@ async function main(): Promise<void> {
     default:
       throw new Error(`Unknown command: ${command}`);
   }
+}
+
+function parseLimitArg(): number | undefined {
+  const rawArg = process.argv.find((arg) => arg.startsWith('--limit='));
+  const raw = rawArg?.split('=')[1];
+  if (!raw) return undefined;
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error('--limit must be a positive integer');
+  }
+
+  return value;
 }
 
 async function startService(): Promise<void> {

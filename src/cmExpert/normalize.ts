@@ -3,6 +3,8 @@ export type RawCar = Record<string, unknown>;
 export interface NormalizedCar {
   raw: RawCar;
   externalCode: string;
+  cmExpertId?: number;
+  cmExpertUrl?: string;
   name: string;
   sectionBrand: string;
   sectionModel: string;
@@ -64,6 +66,7 @@ const FIELD_KEYS = [
   'vehicleState',
   'dealerSitePublicationUrl',
   'publicationDescription',
+  'cmExpertUrl',
   'sellingPrice'
 ] as const;
 
@@ -80,6 +83,8 @@ export function normalizeCar(raw: RawCar): NormalizedCar | null {
   const dmsCarId = toStringValue(findField(raw, 'dmsCarId'));
   const vin = toStringValue(findField(raw, 'vin'));
   const dealerSitePublicationUrl = toStringValue(findField(raw, 'dealerSitePublicationUrl'));
+  const cmExpertId = toNumberValue(findField(raw, 'id'));
+  const cmExpertUrl = cmExpertId ? `https://lk.cm.expert/stock/${cmExpertId}/car` : undefined;
   const externalCode = (dmsCarId || vin || dealerSitePublicationUrl || '').trim();
 
   if (!externalCode) {
@@ -103,6 +108,8 @@ export function normalizeCar(raw: RawCar): NormalizedCar | null {
   return {
     raw,
     externalCode,
+    cmExpertId,
+    cmExpertUrl,
     name: nameParts.join(' ') || externalCode,
     sectionBrand: brand || 'Без марки',
     sectionModel: model || 'Без модели',

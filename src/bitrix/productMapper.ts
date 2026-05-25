@@ -38,12 +38,15 @@ export function buildProductFields(options: {
   productProperties?: BitrixProductProperty[];
 }): ProductFieldsBuildResult {
   const characteristics = buildCharacteristicFields(options.car, options.productProperties ?? []);
+  const description = buildProductDescription(options.car);
   const fields: Record<string, unknown> = {
     name: options.car.name,
     active: 'Y',
     xmlId: options.car.externalCode,
-    detailText: options.car.publicationDescription ?? '',
+    detailText: description,
     detailTextType: 'text',
+    previewText: description,
+    previewTextType: 'text',
     ...characteristics.fields
   };
 
@@ -62,6 +65,16 @@ export function buildProductFields(options: {
   }
 
   return { fields, characteristics };
+}
+
+function buildProductDescription(car: NormalizedCar): string {
+  const parts = [car.publicationDescription?.trim()].filter(Boolean) as string[];
+
+  if (car.cmExpertUrl) {
+    parts.push(`Ссылка CM.Expert: ${car.cmExpertUrl}`);
+  }
+
+  return parts.join('\n\n');
 }
 
 export function buildCharacteristicFields(

@@ -105,17 +105,42 @@ docker compose run --rm app npm run sync:dry
 
 Dry-run ничего не записывает в Bitrix24. В начале вывода есть блок `dryRunCharacteristicPreview`: какие характеристики будут отправлены, какие пропущены из-за пустого `fieldMap.ts`, пустого значения CM.Expert или неизвестного свойства Bitrix24.
 
+Для тестов на одной машине:
+
+```bash
+docker compose run --rm app npm run sync:dry -- --limit=1
+docker compose run --rm -e SYNC_LIMIT=1 app npm run sync:dry
+```
+
+При `--limit=1` сервис читает CM.Expert только до первой подходящей машины, не архивирует отсутствующие товары и не обновляет `data/state.json`.
+
 ## Реальный sync
 
 ```bash
 docker compose run --rm app npm run sync
 ```
 
+Реальный sync только одной машины для проверки:
+
+```bash
+docker compose run --rm app npm run sync -- --limit=1
+```
+
+Этот режим нужен только для точечной проверки. Плановый production-запуск должен работать без `SYNC_LIMIT`.
+
 Обычный фоновый режим:
 
 ```bash
 docker compose up -d --build
 ```
+
+Ссылка на карточку в CM.Expert строится из поля `id`, которое возвращает CM.Expert API:
+
+```text
+https://lk.cm.expert/stock/{id}/car
+```
+
+Сервис добавляет эту ссылку в описание товара и может писать ее в свойство `CAR_CM_EXPERT_URL`.
 
 ## Просмотр логов
 

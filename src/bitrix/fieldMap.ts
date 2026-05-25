@@ -25,6 +25,7 @@ export type BitrixFieldMapKey =
   | "vehicleState"
   | "dealerSitePublicationUrl"
   | "publicationDescription"
+  | "cmExpertUrl"
   | "photos"
   | "photosUrls";
 
@@ -55,6 +56,7 @@ export const bitrixFieldMap: Record<BitrixFieldMapKey, string> = {
   vehicleState: "property150",
   dealerSitePublicationUrl: "property152",
   publicationDescription: "",
+  cmExpertUrl: "property156",
   photos: "",
   photosUrls: "property154"
 };

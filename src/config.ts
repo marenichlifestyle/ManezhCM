@@ -19,6 +19,7 @@ export interface AppConfig {
     cron: string;
     dryRun: boolean;
     runOnStart: boolean;
+    limit?: number;
   };
   logLevel: string;
 }
@@ -50,7 +51,8 @@ export function loadConfig(requirements: ConfigRequirements = {}): AppConfig {
     sync: {
       cron: process.env.SYNC_CRON?.trim() || '0 */2 * * *',
       dryRun: parseBoolean(process.env.DRY_RUN, false),
-      runOnStart: parseBoolean(process.env.RUN_SYNC_ON_START, true)
+      runOnStart: parseBoolean(process.env.RUN_SYNC_ON_START, true),
+      limit: optionalNumber('SYNC_LIMIT')
     },
     logLevel: process.env.LOG_LEVEL?.trim() || 'info'
   };

@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadConfig } from '../config';
-import { CmExpertClient } from '../cmExpert/client';
-import { isImportableCar, normalizeCar, NormalizedCar } from '../cmExpert/normalize';
+import { CmExpertClient, shouldFetchNextPage } from '../cmExpert/client';
+import { isImportableCar, normalizeCar, NormalizedCar, RawCar } from '../cmExpert/normalize';
 import { BitrixClient } from '../bitrix/client';
 import { BitrixSectionService } from '../bitrix/sections';
 import {
@@ -35,9 +35,11 @@ export interface SyncReport {
 
 const ERRORS_PATH = path.resolve('errors/sync-errors.jsonl');
 
-export async function syncCars(options: { dryRun?: boolean } = {}): Promise<SyncReport> {
+export async function syncCars(options: { dryRun?: boolean; limit?: number } = {}): Promise<SyncReport> {
   const config = loadConfig({ cm: true, bitrix: true, bitrixIblock: true });
   const dryRun = options.dryRun ?? config.sync.dryRun;
+  const limit = options.limit ?? config.sync.limit;
+  const isLimitedRun = Boolean(limit && limit > 0);
   const report: SyncReport = {
     received: 0,
     filtered: 0,
@@ -59,7 +61,7 @@ export async function syncCars(options: { dryRun?: boolean } = {}): Promise<Sync
     const cmClient = new CmExpertClient(config.cm);
     const bitrixClient = new BitrixClient(config.bitrix.webhookBaseUrl, config.bitrix.delayMs, config.bitrix.maxRetries);
 
-    const rawCars = await cmClient.getAllCars(50);
+    const rawCars = await fetchRawCarsForSync(cmClient, limit);
     report.received = rawCars.length;
 
     if (rawCars.length === 0) {
@@ -71,8 +73,12 @@ export async function syncCars(options: { dryRun?: boolean } = {}): Promise<Sync
     const filteredRawCars = rawCars.filter(isImportableCar);
     report.filtered = filteredRawCars.length;
 
-    const cars = dedupeCars(filteredRawCars.map(normalizeCar).filter(isNormalizedCar), report);
+    const allCars = dedupeCars(filteredRawCars.map(normalizeCar).filter(isNormalizedCar), report);
+    const cars = limit && limit > 0 ? allCars.slice(0, limit) : allCars;
     report.unique = cars.length;
+    if (isLimitedRun) {
+      logger.warn({ limit, availableUniqueCount: allCars.length, selectedCount: cars.length }, 'SYNC_LIMIT enabled; only selected cars will be processed');
+    }
 
     if (cars.length > 0 && cars.every((car) => car.photos.length === 0)) {
       logger.warn('No photo URLs detected in CM.Expert cars; Bitrix24 product pictures will not be changed');
@@ -148,18 +154,22 @@ export async function syncCars(options: { dryRun?: boolean } = {}): Promise<Sync
       }
     }
 
-    await archiveMissingProducts({
-      dryRun,
-      report,
-      state,
-      currentCodes: new Set(cars.map((car) => car.externalCode)),
-      productsByXmlId,
-      bitrixClient
-    });
+    if (isLimitedRun) {
+      logger.warn('Limited sync run: skip archiving missing products and skip state baseline update');
+    } else {
+      await archiveMissingProducts({
+        dryRun,
+        report,
+        state,
+        currentCodes: new Set(cars.map((car) => car.externalCode)),
+        productsByXmlId,
+        bitrixClient
+      });
+    }
 
     const previousCount = state.lastSuccessfulCount ?? 0;
     const shouldPersistState =
-      !dryRun && report.errors === 0 && !(previousCount > 0 && cars.length < previousCount * 0.5);
+      !dryRun && !isLimitedRun && report.errors === 0 && !(previousCount > 0 && cars.length < previousCount * 0.5);
 
     if (shouldPersistState) {
       await writeState({
@@ -169,6 +179,8 @@ export async function syncCars(options: { dryRun?: boolean } = {}): Promise<Sync
       });
     } else if (dryRun) {
       logger.info('Dry run: state file was not updated');
+    } else if (isLimitedRun) {
+      logger.info('Limited sync run: state file was not updated');
     } else if (report.errors > 0) {
       logger.warn({ errors: report.errors }, 'State file was not updated because sync finished with item errors');
     } else {
@@ -180,6 +192,45 @@ export async function syncCars(options: { dryRun?: boolean } = {}): Promise<Sync
   } finally {
     await lock.release();
   }
+}
+
+async function fetchRawCarsForSync(cmClient: CmExpertClient, limit?: number): Promise<RawCar[]> {
+  const perPage = 50;
+  if (!limit || limit <= 0) {
+    return cmClient.getAllCars(perPage);
+  }
+
+  const rawCars: RawCar[] = [];
+  const selectedExternalCodes = new Set<string>();
+
+  for (let page = 1; page <= 1000; page += 1) {
+    const pageResult = await cmClient.getCarsPage(page, perPage);
+    rawCars.push(...pageResult.cars);
+
+    logger.info({ page, pageCount: pageResult.cars.length, totalReceived: rawCars.length }, 'Fetched CM.Expert cars page');
+
+    for (const rawCar of pageResult.cars) {
+      if (!isImportableCar(rawCar)) continue;
+
+      const car = normalizeCar(rawCar);
+      if (!car) continue;
+
+      selectedExternalCodes.add(car.externalCode);
+      if (selectedExternalCodes.size >= limit) {
+        logger.warn(
+          { limit, selectedCount: selectedExternalCodes.size, totalReceived: rawCars.length },
+          'Limited CM.Expert fetch stopped after collecting selected cars'
+        );
+        return rawCars;
+      }
+    }
+
+    if (!shouldFetchNextPage(pageResult.raw, pageResult.cars.length, page, perPage)) {
+      break;
+    }
+  }
+
+  return rawCars;
 }
 
 function dedupeCars(cars: NormalizedCar[], report: SyncReport): NormalizedCar[] {
