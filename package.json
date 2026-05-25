@@ -1,0 +1,33 @@
+{
+  "name": "cmexpert-bitrix-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight CM.Expert to Bitrix24 catalog synchronizer",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts start",
+    "sync": "tsx src/index.ts sync",
+    "sync:dry": "tsx src/index.ts sync:dry",
+    "cm:sample": "tsx src/index.ts cm:sample",
+    "bitrix:catalogs": "tsx src/index.ts bitrix:catalogs",
+    "bitrix:fields": "tsx src/index.ts bitrix:fields",
+    "bitrix:sections": "tsx src/index.ts bitrix:sections",
+    "bitrix:create-car-properties": "tsx src/index.ts bitrix:create-car-properties",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "node-cron": "^4.2.1",
+    "pino": "^9.6.0",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

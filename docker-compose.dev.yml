@@ -1,0 +1,6 @@
+services:
+  app:
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./errors:/app/errors

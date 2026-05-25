@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    command: npm run start
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./errors:/app/errors
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const fs=require('fs'); for (const p of ['/app/data','/app/errors']) fs.accessSync(p, fs.constants.W_OK);\""
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
