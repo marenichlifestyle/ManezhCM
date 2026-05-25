@@ -30,6 +30,7 @@ export interface NormalizedCar {
   publishStatus?: string;
   vehicleAvailability?: string;
   vehicleState?: string;
+  description?: string;
   publicationDescription?: string;
   dealerSitePublicationUrl?: string;
   vin?: string;
@@ -64,6 +65,7 @@ const FIELD_KEYS = [
   'publishStatus',
   'vehicleAvailability',
   'vehicleState',
+  'description',
   'dealerSitePublicationUrl',
   'publicationDescription',
   'cmExpertUrl',
@@ -135,6 +137,7 @@ export function normalizeCar(raw: RawCar): NormalizedCar | null {
     publishStatus: toStringValue(findField(raw, 'publishStatus')),
     vehicleAvailability: toStringValue(findField(raw, 'vehicleAvailability')),
     vehicleState: toStringValue(findField(raw, 'vehicleState')),
+    description: toStringValue(findField(raw, 'description')),
     publicationDescription: toStringValue(findField(raw, 'publicationDescription')),
     dealerSitePublicationUrl,
     vin,

@@ -33,11 +33,11 @@ async function main(): Promise<void> {
       return;
 
     case 'sync':
-      console.log(JSON.stringify(await syncCars({ dryRun: false, limit: parseLimitArg() }), null, 2));
+      console.log(JSON.stringify(await syncCars({ dryRun: false, ...parseSyncArgs() }), null, 2));
       return;
 
     case 'sync:dry':
-      console.log(JSON.stringify(await syncCars({ dryRun: true, limit: parseLimitArg() }), null, 2));
+      console.log(JSON.stringify(await syncCars({ dryRun: true, ...parseSyncArgs() }), null, 2));
       return;
 
     case 'start':
@@ -49,9 +49,16 @@ async function main(): Promise<void> {
   }
 }
 
+function parseSyncArgs(): { limit?: number; externalCode?: string; vin?: string } {
+  return {
+    limit: parseLimitArg(),
+    externalCode: parseStringArg('--external-code='),
+    vin: parseStringArg('--vin=')
+  };
+}
+
 function parseLimitArg(): number | undefined {
-  const rawArg = process.argv.find((arg) => arg.startsWith('--limit='));
-  const raw = rawArg?.split('=')[1];
+  const raw = parseStringArg('--limit=');
   if (!raw) return undefined;
 
   const value = Number(raw);
@@ -60,6 +67,12 @@ function parseLimitArg(): number | undefined {
   }
 
   return value;
+}
+
+function parseStringArg(prefix: string): string | undefined {
+  const rawArg = process.argv.find((arg) => arg.startsWith(prefix));
+  const raw = rawArg?.slice(prefix.length).trim();
+  return raw || undefined;
 }
 
 async function startService(): Promise<void> {

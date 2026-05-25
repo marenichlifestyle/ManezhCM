@@ -109,10 +109,11 @@ Dry-run ничего не записывает в Bitrix24. В начале вы
 
 ```bash
 docker compose run --rm app npm run sync:dry -- --limit=1
+docker compose run --rm app npm run sync:dry -- --vin=SALGA2BKXKA520203
 docker compose run --rm -e SYNC_LIMIT=1 app npm run sync:dry
 ```
 
-При `--limit=1` сервис читает CM.Expert только до первой подходящей машины, не архивирует отсутствующие товары и не обновляет `data/state.json`.
+При `--limit=1`, `--vin=...` или `--external-code=...` сервис не архивирует отсутствующие товары и не обновляет `data/state.json`.
 
 ## Реальный sync
 
@@ -124,6 +125,7 @@ docker compose run --rm app npm run sync
 
 ```bash
 docker compose run --rm app npm run sync -- --limit=1
+docker compose run --rm app npm run sync -- --vin=SALGA2BKXKA520203
 ```
 
 Этот режим нужен только для точечной проверки. Плановый production-запуск должен работать без `SYNC_LIMIT`.

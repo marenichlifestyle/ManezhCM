@@ -68,13 +68,24 @@ export function buildProductFields(options: {
 }
 
 function buildProductDescription(car: NormalizedCar): string {
-  const parts = [car.publicationDescription?.trim()].filter(Boolean) as string[];
+  const parts = [pickFullDescription(car.publicationDescription, car.description)].filter(Boolean) as string[];
 
   if (car.cmExpertUrl) {
     parts.push(`Ссылка CM.Expert: ${car.cmExpertUrl}`);
   }
 
-  return parts.join('\n\n');
+  return sanitizeBitrixText(parts.join('\n\n'));
+}
+
+function pickFullDescription(...values: Array<string | undefined>): string | undefined {
+  const unique = [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])];
+  if (unique.length === 0) return undefined;
+
+  const sorted = unique.sort((left, right) => right.length - left.length);
+  const longest = sorted[0];
+  const rest = sorted.slice(1).filter((value) => !longest.includes(value));
+
+  return [longest, ...rest].join('\n\n');
 }
 
 export function buildCharacteristicFields(
@@ -216,12 +227,28 @@ function normalizeScalarValue(value: unknown): string | number | undefined {
   if (value === null || value === undefined || value === '') return undefined;
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (typeof value === 'string') {
-    const normalized = value.trim();
+    const normalized = sanitizeBitrixText(value).trim();
     return normalized || undefined;
   }
 
   if (typeof value === 'boolean') return value ? 'Y' : 'N';
   return JSON.stringify(value);
+}
+
+function sanitizeBitrixText(value: string): string {
+  return Array.from(value)
+    .map((char) => {
+      switch (char) {
+        case '\u{1F538}':
+        case '\u{1F539}':
+          return '- ';
+        case '\u{1F4CD}':
+          return 'Адрес: ';
+        default:
+          return (char.codePointAt(0) ?? 0) > 0xffff ? '' : char;
+      }
+    })
+    .join('');
 }
 
 function previewValue(value: unknown): unknown {

@@ -11,6 +11,7 @@ import {
   listProducts,
   productHasPicture,
   updateProduct,
+  updateProductTextFields,
   BitrixProduct
 } from '../bitrix/products';
 import { hasConfiguredBitrixFieldMap } from '../bitrix/fieldMap';
@@ -35,11 +36,26 @@ export interface SyncReport {
 
 const ERRORS_PATH = path.resolve('errors/sync-errors.jsonl');
 
-export async function syncCars(options: { dryRun?: boolean; limit?: number } = {}): Promise<SyncReport> {
+interface SyncCarsOptions {
+  dryRun?: boolean;
+  limit?: number;
+  externalCode?: string;
+  vin?: string;
+}
+
+interface SyncTarget {
+  externalCode?: string;
+  vin?: string;
+}
+
+export async function syncCars(options: SyncCarsOptions = {}): Promise<SyncReport> {
   const config = loadConfig({ cm: true, bitrix: true, bitrixIblock: true });
   const dryRun = options.dryRun ?? config.sync.dryRun;
   const limit = options.limit ?? config.sync.limit;
   const isLimitedRun = Boolean(limit && limit > 0);
+  const target = buildSyncTarget(options);
+  const isTargetedRun = Boolean(target.externalCode || target.vin);
+  const isPartialRun = isLimitedRun || isTargetedRun;
   const report: SyncReport = {
     received: 0,
     filtered: 0,
@@ -55,13 +71,13 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
   const lock = await acquireSyncLock();
 
   try {
-    logger.info({ dryRun }, 'Starting CM.Expert to Bitrix24 cars sync');
+    logger.info({ dryRun, limit, target }, 'Starting CM.Expert to Bitrix24 cars sync');
 
     const state = await readState();
     const cmClient = new CmExpertClient(config.cm);
     const bitrixClient = new BitrixClient(config.bitrix.webhookBaseUrl, config.bitrix.delayMs, config.bitrix.maxRetries);
 
-    const rawCars = await fetchRawCarsForSync(cmClient, limit);
+    const rawCars = await fetchRawCarsForSync(cmClient, { limit, target });
     report.received = rawCars.length;
 
     if (rawCars.length === 0) {
@@ -73,7 +89,13 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
     const filteredRawCars = rawCars.filter(isImportableCar);
     report.filtered = filteredRawCars.length;
 
-    const allCars = dedupeCars(filteredRawCars.map(normalizeCar).filter(isNormalizedCar), report);
+    let allCars = dedupeCars(filteredRawCars.map(normalizeCar).filter(isNormalizedCar), report);
+    if (isTargetedRun) {
+      allCars = allCars.filter((car) => matchesNormalizedTarget(car, target));
+      if (allCars.length === 0) {
+        logger.warn({ target }, 'No importable CM.Expert cars matched sync target');
+      }
+    }
     const cars = limit && limit > 0 ? allCars.slice(0, limit) : allCars;
     report.unique = cars.length;
     if (isLimitedRun) {
@@ -118,13 +140,14 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
         const fields = productFields.fields;
 
         if (dryRun && !dryRunCharacteristicPreviewPrinted) {
-          printDryRunCharacteristicPreview(car, productFields.characteristics);
+          printDryRunCharacteristicPreview(car, productFields);
           dryRunCharacteristicPreviewPrinted = true;
         }
 
         if (existingProduct) {
           if (!dryRun) {
             await updateProduct(bitrixClient, existingProduct.id, fields);
+            await updateProductTextFields(bitrixClient, existingProduct.id, fields);
             await upsertProductPrice({
               client: bitrixClient,
               productId: existingProduct.id,
@@ -138,6 +161,7 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
 
         if (!dryRun) {
           const createdProduct = await addProduct(bitrixClient, fields);
+          await updateProductTextFields(bitrixClient, createdProduct.id, fields);
           await upsertProductPrice({
             client: bitrixClient,
             productId: createdProduct.id,
@@ -154,8 +178,8 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
       }
     }
 
-    if (isLimitedRun) {
-      logger.warn('Limited sync run: skip archiving missing products and skip state baseline update');
+    if (isPartialRun) {
+      logger.warn({ target, limit }, 'Partial sync run: skip archiving missing products and skip state baseline update');
     } else {
       await archiveMissingProducts({
         dryRun,
@@ -169,7 +193,7 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
 
     const previousCount = state.lastSuccessfulCount ?? 0;
     const shouldPersistState =
-      !dryRun && !isLimitedRun && report.errors === 0 && !(previousCount > 0 && cars.length < previousCount * 0.5);
+      !dryRun && !isPartialRun && report.errors === 0 && !(previousCount > 0 && cars.length < previousCount * 0.5);
 
     if (shouldPersistState) {
       await writeState({
@@ -179,8 +203,8 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
       });
     } else if (dryRun) {
       logger.info('Dry run: state file was not updated');
-    } else if (isLimitedRun) {
-      logger.info('Limited sync run: state file was not updated');
+    } else if (isPartialRun) {
+      logger.info('Partial sync run: state file was not updated');
     } else if (report.errors > 0) {
       logger.warn({ errors: report.errors }, 'State file was not updated because sync finished with item errors');
     } else {
@@ -194,8 +218,40 @@ export async function syncCars(options: { dryRun?: boolean; limit?: number } = {
   }
 }
 
-async function fetchRawCarsForSync(cmClient: CmExpertClient, limit?: number): Promise<RawCar[]> {
+function buildSyncTarget(options: SyncCarsOptions): SyncTarget {
+  return {
+    externalCode: normalizeTargetValue(options.externalCode),
+    vin: normalizeTargetValue(options.vin)
+  };
+}
+
+async function fetchRawCarsForSync(
+  cmClient: CmExpertClient,
+  options: { limit?: number; target: SyncTarget }
+): Promise<RawCar[]> {
   const perPage = 50;
+  const { limit, target } = options;
+
+  if (target.externalCode || target.vin) {
+    for (let page = 1; page <= 1000; page += 1) {
+      const pageResult = await cmClient.getCarsPage(page, perPage);
+
+      logger.info({ page, pageCount: pageResult.cars.length }, 'Fetched CM.Expert cars page');
+
+      const matchedCar = pageResult.cars.find((rawCar) => matchesRawTarget(rawCar, target));
+      if (matchedCar) {
+        logger.warn({ target, page }, 'Targeted CM.Expert fetch stopped after matched car');
+        return [matchedCar];
+      }
+
+      if (!shouldFetchNextPage(pageResult.raw, pageResult.cars.length, page, perPage)) {
+        break;
+      }
+    }
+
+    return [];
+  }
+
   if (!limit || limit <= 0) {
     return cmClient.getAllCars(perPage);
   }
@@ -233,6 +289,28 @@ async function fetchRawCarsForSync(cmClient: CmExpertClient, limit?: number): Pr
   return rawCars;
 }
 
+function matchesRawTarget(rawCar: RawCar, target: SyncTarget): boolean {
+  const car = normalizeCar(rawCar);
+  return Boolean(car && matchesNormalizedTarget(car, target));
+}
+
+function matchesNormalizedTarget(car: NormalizedCar, target: SyncTarget): boolean {
+  if (target.externalCode && normalizeTargetValue(car.externalCode) === target.externalCode) {
+    return true;
+  }
+
+  if (target.vin && normalizeTargetValue(car.vin) === target.vin) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeTargetValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toUpperCase();
+  return normalized || undefined;
+}
+
 function dedupeCars(cars: NormalizedCar[], report: SyncReport): NormalizedCar[] {
   const byExternalCode = new Map<string, NormalizedCar>();
 
@@ -256,20 +334,28 @@ function dedupeCars(cars: NormalizedCar[], report: SyncReport): NormalizedCar[] 
 
 function printDryRunCharacteristicPreview(
   car: NormalizedCar,
-  characteristics: ReturnType<typeof buildProductFields>['characteristics']
+  productFields: ReturnType<typeof buildProductFields>
 ): void {
+  const detailText = String(productFields.fields.detailText ?? '');
   const payload = {
     dryRunCharacteristicPreview: {
       externalCode: car.externalCode,
       name: car.name,
-      sentToBitrix: characteristics.sent,
-      skippedEmptyFieldMap: characteristics.skippedEmptyFieldMap,
-      skippedEmptyValue: characteristics.skippedEmptyValue,
-      skippedUnknownProperty: characteristics.skippedUnknownProperty
+      detailTextLength: detailText.length,
+      detailTextPreview: previewLongText(detailText),
+      sentToBitrix: productFields.characteristics.sent,
+      skippedEmptyFieldMap: productFields.characteristics.skippedEmptyFieldMap,
+      skippedEmptyValue: productFields.characteristics.skippedEmptyValue,
+      skippedUnknownProperty: productFields.characteristics.skippedUnknownProperty
     }
   };
 
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function previewLongText(value: string): string {
+  if (value.length <= 700) return value;
+  return `${value.slice(0, 350)}\n...\n${value.slice(-350)}`;
 }
 
 async function prepareProductImage(

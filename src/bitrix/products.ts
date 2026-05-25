@@ -62,6 +62,23 @@ export async function updateProduct(
   return normalizeProductResult(result, id);
 }
 
+export async function updateProductTextFields(
+  client: BitrixClient,
+  id: number | string,
+  fields: Record<string, unknown>
+): Promise<void> {
+  const textFields: Record<string, unknown> = {};
+  for (const key of ['detailText', 'detailTextType', 'previewText', 'previewTextType']) {
+    if (fields[key] !== undefined) {
+      textFields[key] = fields[key];
+    }
+  }
+
+  if (Object.keys(textFields).length > 0) {
+    await client.call<unknown>('catalog.product.update', { id, fields: textFields });
+  }
+}
+
 export async function getProductFields(client: BitrixClient, iblockId: number): Promise<Record<string, unknown>> {
   let result: Record<string, unknown>;
   try {
